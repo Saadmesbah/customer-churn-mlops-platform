@@ -1,5 +1,7 @@
 import pytest
+
 from churn.data import FEATURES
+
 
 @pytest.fixture
 def customer():

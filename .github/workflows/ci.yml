@@ -1,0 +1,44 @@
+name: CI
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --frozen --python 3.12
+      - run: uv run ruff check . && uv run ruff format --check .
+      - run: uv run pytest -m "not integration" --cov=churn --cov-report=term-missing
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --frozen --python 3.12
+      - run: uv run pytest -m integration -v
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: evaluation-and-drift
+          path: evidence/
+  containers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cp .env.example .env
+      - run: docker compose config --quiet
+      - run: docker compose up --build -d
+      - name: Verify services
+        run: |
+          for i in $(seq 1 90); do
+            if curl --fail http://localhost:8000/health && curl --fail http://localhost:8501/_stcore/health; then exit 0; fi
+            sleep 10
+          done
+          docker compose logs
+          exit 1
+      - run: docker compose down -v
+        if: always()

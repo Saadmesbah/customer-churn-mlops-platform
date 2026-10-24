@@ -1,7 +1,7 @@
 {
   "model": "xgboost",
   "version": 1,
-  "run_id": "b97e93462d914ab984bd99f7a43e1e27",
+  "run_id": "f82d13a621224ad799222d1d3c931033",
   "cv_roc_auc": 0.9827710431130209,
   "threshold": 0.5,
   "metrics": {

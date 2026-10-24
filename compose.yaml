@@ -1,0 +1,74 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: mlflow
+      POSTGRES_USER: mlflow
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mlflow -d mlflow"]
+      interval: 5s
+      retries: 20
+  mlflow:
+    build: .
+    command: ["sh", "-c", "mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri postgresql://mlflow:$$POSTGRES_PASSWORD@postgres:5432/mlflow --artifacts-destination /app/mlartifacts --serve-artifacts --allowed-hosts 'mlflow:5000,localhost:5000,127.0.0.1:5000'"]
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - mlartifacts:/app/mlartifacts
+    ports: ["127.0.0.1:5000:5000"]
+    depends_on:
+      postgres: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      interval: 5s
+      retries: 30
+  train:
+    build: .
+    command: ["python", "-m", "churn.train"]
+    environment:
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+    volumes:
+      - data:/app/data
+      - artifacts:/app/artifacts
+    depends_on:
+      mlflow: {condition: service_healthy}
+  monitor:
+    build: .
+    command: ["python", "-m", "churn.monitor"]
+    volumes:
+      - artifacts:/app/artifacts:ro
+      - reports:/app/reports
+    depends_on:
+      train: {condition: service_completed_successfully}
+  api:
+    build: .
+    ports: ["127.0.0.1:8000:8000"]
+    volumes:
+      - artifacts:/app/artifacts:ro
+    depends_on:
+      train: {condition: service_completed_successfully}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      retries: 12
+  dashboard:
+    build: .
+    command: ["streamlit", "run", "dashboard/app.py", "--server.address=0.0.0.0"]
+    environment:
+      API_URL: http://api:8000
+    ports: ["127.0.0.1:8501:8501"]
+    volumes:
+      - artifacts:/app/artifacts:ro
+      - reports:/app/reports:ro
+    depends_on:
+      api: {condition: service_healthy}
+      monitor: {condition: service_completed_successfully}
+volumes:
+  pgdata:
+  mlartifacts:
+  data:
+  artifacts:
+  reports:
